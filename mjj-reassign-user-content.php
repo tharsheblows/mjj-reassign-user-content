@@ -16,7 +16,7 @@ class MJJReassign
 	{
 
 		// hook in /wp-admin/users.php
-		add_action( 'mjj_reassign_to_user', array( $this, 'reassign_to_users' ) );
+		add_filter( 'wp_dropdown_users_args', array( $this, 'reassign_to_users' ), 1, 2 );
 
 		// let's just add it to the edit screen, no need for a column
 		add_action( 'edit_user_profile', array( $this, 'edit_reassignee' ) );
@@ -34,37 +34,31 @@ class MJJReassign
 	}
 
 	// add in the dropdown list with array of users allowed to have content reassigned to them (ie reassignees)
-	// y'know what, let's just edit the fucking file. I've replaced wp_dropdown_users with do_action('reassign_to_user') in /wp-admin/users.phpL245
-	function reassign_to_users(){
+	// y'know what, let's just edit the file. I've replaced wp_dropdown_users with do_action('reassign_to_user') in /wp-admin/users.phpL245
+	function reassign_to_users( $query_args, $r ){
 
+		$screen = get_current_screen();
+
+		if ( $screen->id !== 'users' || !isset( $_GET['action'] ) || $_GET['action'] !== 'delete' ) {
+			return $query_args;
+		}
 		// Bail if the current user cannot delete users -- this is already in the page but y'know
 		if( !current_user_can( 'delete_users' ) ){
-			return false;
+			return $query_args;
 		}
 
 		//this will return the array of reassignees
 		$reassignees = get_option( 'mjj_reassignees' );
 
-		// if there aren't any, say so, then bail
-		if( !$reassignees ){
-			echo 'You need to choose users who can be used here. Currently you haven&rsquo;t chosen any.';
-			return false;
-		}
+		$reassignee_array = ( !empty( $reassignees ) ) ? array( 'include' => array_values( $reassignees ), 'exclude' => '' ) :  array( 'role' => 'Administrator' );
 
-		// otherwise, print out the select
-		echo '<select id="reassign_user" name="reassign_user">';
-			foreach ($reassignees as $re_name => $re_id ) {
-				echo '<option value="' . $re_id . '">' . $re_name . '</option>';
-			}
-		echo '</select>';
-
-		return true;
+		return $reassignee_array;
 	}
 
 	function edit_reassignee( $user ){
 
 		// Bail if current user cannot edit this user
-		if ( ! current_user_can( 'edit_user', $user->ID ) ) {
+		if ( ! current_user_can( 'edit_users' ) || ! current_user_can( 'edit_user', $user->ID ) ) {
 			return;
 		}
 
@@ -72,7 +66,7 @@ class MJJReassign
 		$reassignees = get_option( 'mjj_reassignees' );
 
 		// Is this user in the reassignee array? If yes, then the box will be checked
-		if( $reassignees ){
+		if( !empty( $reassignees ) ){
 			$reassign = in_array( $user->ID, $reassignees ) ? 'checked' : '';
 		}
 		else{
@@ -80,7 +74,7 @@ class MJJReassign
 		}
 
 		// Make the reassign metabox
-		$this -> choose_reassignee( $reassign );
+		return $this -> choose_reassignee( $reassign );
 
 	}
 
@@ -91,7 +85,7 @@ class MJJReassign
 			return;
 		}
 
-		$this -> choose_reassignee( );
+		$this -> choose_reassignee('');
 
 	}
 
@@ -101,7 +95,7 @@ class MJJReassign
 		echo '<th><label for="is_reassignee">Reassignee?</label></th>';
 		echo '<td>';
 		echo '<fieldset><legend class="screen-reader-text"><span>Allow posts to be reassigned to this user</span></legend>';
-		echo '<label for="is_reassignee">';
+		echo '<label for="is_reassignee" class="full-width">';
 		echo '<input name="is_reassignee" type="checkbox" id="is_reassignee" ' . $reassign . ' value="1" />';
 		echo 'Allow posts to be reassigned to this user when deleting other users.</label><br /></fieldset>';
 		echo '</td></tr></tbody></table>';
@@ -110,7 +104,7 @@ class MJJReassign
 
 	function update_reassignee( $reassignee_id ) {
 
-    	if ( current_user_can( 'edit_user', $reassignee_id ) ){
+    	if ( current_user_can( 'edit_users' ) && current_user_can( 'edit_user', $reassignee_id ) ){
 
     		$reassignee_name = get_userdata( $reassignee_id )->user_login;
     		$reassignee_list = get_option( 'mjj_reassignees' );
@@ -128,7 +122,13 @@ class MJJReassign
 
  	function add_reassignee( $reassignee_id, $reassignee_name, $reassignee_list ){
 
- 		$reassignee_keys = array_keys( $reassignee_list, $reassignee_id );
+ 		$reassignee_id_array = is_int( $reassignee_id ) ? array( $reassignee_id ) : false;
+
+ 		if( empty( $reassignee_id_array ) || ! current_user_can( 'edit_users' ) || ! current_user_can( 'edit_user', $reassignee_id ) ){
+ 			return;
+ 		}
+
+ 		$reassignee_keys = array_keys( $reassignee_list, $reassignee_id_array );
     	if( ! $reassignee_keys ){
     		$reassignee_list[ $reassignee_name ] = $reassignee_id;
     		update_option( 'mjj_reassignees', $reassignee_list );
@@ -145,7 +145,13 @@ class MJJReassign
 
  	function delete_reassignee( $reassignee_id, $reassignee_name, $reassignee_list ){
 
- 		$reassignee_keys = array_keys( $reassignee_id, $reassignee_list );
+ 		$reassignee_id_array = is_int( $reassignee_id ) ? array( $reassignee_id ) : false;
+
+ 		if( empty( $reassignee_id_array ) || ! current_user_can( 'edit_users' ) || ! current_user_can( 'edit_user', $reassignee_id ) ){
+ 			return;
+ 		}
+
+ 		$reassignee_keys = array_keys( $reassignee_id_array, $reassignee_list );
 
     	if( empty( $reassignee_keys ) ){
     		return;
